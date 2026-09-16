@@ -1,0 +1,63 @@
+# Reusable pnpm/Node CI. Callers set only what differs from the defaults.
+# Pass an empty string for a step to skip it, e.g. lint: ''.
+name: Node CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node version. Overridden by a .nvmrc if the repo has one.
+        type: string
+        default: '22'
+      working-directory:
+        type: string
+        default: '.'
+      install:
+        type: string
+        default: 'pnpm install --frozen-lockfile'
+      lint:
+        type: string
+        default: 'pnpm lint'
+      build:
+        type: string
+        default: 'pnpm build'
+      test:
+        type: string
+        default: 'pnpm test'
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the repo's .nvmrc if it has one
+        id: nvmrc
+        run: |
+          if [ -f .nvmrc ]; then echo "file=.nvmrc" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.file == '' && inputs.node-version || '' }}
+          node-version-file: ${{ steps.nvmrc.outputs.file }}
+
+      # corepack pins pnpm from packageManager in package.json, so the lockfile
+      # version and the pnpm version cannot drift apart.
+      - run: corepack enable
+
+      - run: ${{ inputs.install }}
+
+      - name: Lint
+        if: inputs.lint != ''
+        run: ${{ inputs.lint }}
+
+      - name: Build
+        if: inputs.build != ''
+        run: ${{ inputs.build }}
+
+      - name: Test
+        if: inputs.test != ''
+        run: ${{ inputs.test }}
