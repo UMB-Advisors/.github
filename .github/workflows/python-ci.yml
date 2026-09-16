@@ -1,0 +1,54 @@
+# Reusable uv/Python CI. Callers set only what differs from the defaults.
+# Pass an empty string for a step to skip it, e.g. format-check: ''.
+name: Python CI (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: '3.12'
+      working-directory:
+        type: string
+        default: '.'
+      install:
+        type: string
+        default: 'uv sync --all-extras --dev'
+      lint:
+        type: string
+        default: 'uv run ruff check .'
+      format-check:
+        type: string
+        default: 'uv run ruff format --check .'
+      test:
+        type: string
+        default: 'uv run pytest'
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ inputs.python-version }}
+
+      - run: ${{ inputs.install }}
+
+      - name: Lint
+        if: inputs.lint != ''
+        run: ${{ inputs.lint }}
+
+      - name: Format check
+        if: inputs.format-check != ''
+        run: ${{ inputs['format-check'] }}
+
+      - name: Test
+        if: inputs.test != ''
+        run: ${{ inputs.test }}
