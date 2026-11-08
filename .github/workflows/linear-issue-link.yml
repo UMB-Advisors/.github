@@ -1,0 +1,57 @@
+# Reusable check: a pull request must name a Linear issue key (PREFIX-123) in its
+# branch name, title or body. Matching is case-insensitive, so Linear's own lowercase
+# branch names (user/umb-123-slug) count. Trivial PRs opt out with a label.
+#
+# Callers trigger on pull_request with types
+#   [opened, edited, reopened, synchronize, labeled, unlabeled]
+# so that fixing the title or adding the opt-out label re-runs the check.
+name: Linear issue link (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      prefix:
+        description: Linear team key the issue key must start with.
+        type: string
+        default: 'UMB'
+      opt-out-label:
+        description: Label that skips the check (dependency bumps, typo fixes).
+        type: string
+        default: 'no-linear'
+
+permissions: {}
+
+jobs:
+  linear-issue-link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require a Linear issue key
+        # PR text is user-controlled: it reaches the script through env, never through ${{ }}.
+        env:
+          PREFIX: ${{ inputs.prefix }}
+          OPT_OUT: ${{ inputs.opt-out-label }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          prefix = os.environ["PREFIX"]
+          opt_out = os.environ["OPT_OUT"]
+          if opt_out in json.loads(os.environ.get("LABELS") or "[]"):
+              print(f"Skipped: the PR carries the '{opt_out}' label.")
+              sys.exit(0)
+          key = re.compile(rf"(?<![A-Za-z0-9]){re.escape(prefix)}-[0-9]+(?![0-9])", re.I)
+          for field in ("BRANCH", "TITLE", "BODY"):
+              m = key.search(os.environ.get(field) or "")
+              if m:
+                  print(f"Linear issue {m.group(0).upper()} found in the PR {field.lower()}.")
+                  sys.exit(0)
+          sys.exit(
+              f"::error::No Linear issue key ({prefix}-123) in the branch name, PR title or PR body. "
+              f"Add one, e.g. a branch named feat/{prefix.lower()}-123-short-name or '{prefix}-123' in the title, "
+              f"or add the '{opt_out}' label if this PR is trivial (dependency bump, typo fix)."
+          )
+          PY
